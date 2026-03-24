@@ -1,0 +1,42 @@
+name: 自动同步原仓库更新
+on:
+  # 定时执行：每天北京时间16:00同步一次
+  schedule:
+    - cron: '0 8 * * *'  # UTC时间8点 → 北京时间8+8=16点
+     # 自动执行：北京时间凌晨2:00（UTC 18:00）
+    - cron: '0 18 * * *'
+
+ # 手动触发
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 拉取你的Fork仓库代码
+      - name: 克隆仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉取所有历史记录
+          ref: master  # 明确指定拉取master分支
+          persist-credentials: true  # 保留凭证用于推送
+      # 2. 添加原仓库为上游仓库（增加容错）
+      - name: 设置上游仓库
+        run: |
+          git remote remove upstream || true  # 先删除已存在的upstream，避免报错
+          git remote add upstream https://github.com/2dust/v2rayNG.git
+          git fetch upstream --prune  # 清理过时分支，确保拉取最新
+      # 3. 合并原仓库的更新到你的仓库（增加冲突处理）
+      - name: 合并更新
+        run: |
+          # 确保切换到正确分支，先检查分支是否存在
+          git checkout master || git checkout -b master
+          # 拉取本地master分支最新代码（防止本地落后）
+          git pull origin master --no-edit
+          # 合并上游master分支，若有冲突则自动放弃合并
+          git merge upstream/master --no-edit || (echo "合并冲突，终止同步" && exit 0)
+      # 4. 推送更新到你的Fork仓库
+      - name: 推送更新
+        run: |
+          git push origin master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
